@@ -598,13 +598,31 @@ Lemma skipn_nil : forall (n : nat) (a : list bool),
   skipn n a = [] ->
   skipn (S n) a = [].
 Proof.
-Admitted.
+  intros n.
+  induction n as [| n' IH].
+    - intros a H. destruct a as [| ha ta].
+      + simpl. auto.
+      + simpl in H. discriminate H.
+    - intros a H. destruct a as [| ha ta].
+      + simpl. auto.
+      + simpl. simpl in H.
+        pose proof (skip := IH ta H).
+        simpl in skip.
+        exact skip.
+Qed.
 
 Lemma skipn_tail : forall (n : nat) (ha hs : bool) (ta ts : list bool),
   skipn n (ha :: ta) = hs :: ts ->
   skipn n ta = ts.
 Proof.
-Admitted.
+  intros n.
+  induction n as [| n' IH].
+    - intros. simpl. simpl in H. injection H as H0 H1. exact H1.
+    - intros. 
+      destruct ta as [| hta tta].
+        + simpl in H. destruct n'; discriminate H.
+        + simpl. simpl in H. apply (IH hta hs tta ts H). 
+Qed.
 
 Lemma skipn_skipn : forall (x y : nat) (a : list bool),
   skipn (x + y) a = skipn y (skipn x a).
@@ -648,6 +666,7 @@ Proof.
 Qed.
 
 
+
 Lemma contains_flag_invalid : forall (b f k: list bool) (s : bool) (H : length k > 0),
   (forall n, n <= length k -> valid_message_start ((firstn n k) ++ f) k s H = false) ->
   valid_message_start (b ++ f) k s H = false.
@@ -688,7 +707,7 @@ Proof.
                    auto.
           * simpl. exact Ht.
 Qed.
-      
+
 
 Lemma no_flags_in_data_proof : forall (a f k : list bool) (s : bool) (H : length k > 0),
   (forall n, n <= length k -> valid_message_start ((firstn n k) ++ f) k s H = false) ->
