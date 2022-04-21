@@ -86,16 +86,6 @@ Fixpoint flag_in_data (n : nat) (f k : list bool) (s : bool) (H : length k > 0) 
     | S n' => valid_message_start ((firstn n k) ++ f) k s H || flag_in_data n' f k s H
   end.
 
-Lemma t : length [true; true; true; true; true] > 0.
-  simpl.
-  lia.
-Qed.
-
-Lemma test : flag_in_data (length [true; true; true; true; true]) [false; true; true; true; true; true; true; false] [true; true; true; true; true] false t = false.
-  repeat (simpl; try rewrite valid_message_start_equation).
-  auto.
-Qed.
-
 
 (*flags are prepended and appended*)
 Definition add_flags (a f : list bool) :=
@@ -471,6 +461,26 @@ Proof.
       reflexivity.
 Qed.
 
+Lemma valid_message_start_le : forall (a k: list bool) (s : bool) (H : length k > 0),
+  length a <= length k ->
+  valid_message_start a k s H = true.
+Proof.
+  intros a k s H Hlen.
+  assert (triv : length a < length k \/ length a = length k). {lia. }
+  clear Hlen.
+  destruct triv as [trivL | trivR].
+    - apply (valid_message_start_short). auto.
+    - induction a as [| ha ta IH].
+      + simpl in trivR. lia.
+      + destruct k as [| hk tk].
+        * simpl in H. lia.
+        * rewrite valid_message_start_equation. 
+          destruct (starts_with (ha :: ta) (hk :: tk)).
+            -- rewrite <- trivR. rewrite skipn_all. auto.
+            -- assert (Hlen : length ta < length (hk::tk)). {simpl in trivR. simpl. lia. }
+               apply (valid_message_start_short). auto.
+Qed.
+
 
 Lemma stuff_destuff_eq : forall (a k: list bool) (s : bool) (H : length k > 0), 
   destuff (stuff a k s H) k H = a.
@@ -583,6 +593,24 @@ Proof.
           exact HflagL.
 Qed.
 
+Lemma starts_with_same : forall (a b k : list bool),
+  length a > length k ->
+  starts_with (a ++ b) k = starts_with a k.
+Proof.
+  intros a.
+  induction a as [| ha ta IH].
+    - intros b k H.
+      simpl in H.
+      inversion H.
+    - intros b k H.
+      destruct k as [| hk tk].
+        + simpl. auto.
+        + simpl. simpl in H. 
+          assert (triv : length ta > length tk). {lia. }
+          rewrite (IH b tk triv).
+          auto.
+Qed.
+
 Lemma starts_with_first : forall (a f k : list bool),
   starts_with (a ++ f) k = true ->
   length a <= length k ->
@@ -655,11 +683,74 @@ Proof.
               -- rewrite skipn_cons. rewrite <- (skipn_tail (S x') ha hs ta ts skip). auto.
 Qed.
 
+
 Lemma valid_message_start_append : forall (a b k : list bool) (s : bool) (H : length k > 0),
   valid_message_start a k s H = false ->
   valid_message_start (a ++ b) k s H = false.
 Proof.
-Admitted.
+  intros a b k s H Hvalid.
+  assert (H' : length k + 1 > 0). {lia. }
+  
+  induction a as [a Hlen | ha ta Ht Hskip] using (list_indk (length k + 1) H').
+    - assert (Hlength : length a > length k). { 
+        assert (triv : length a <= length k \/ length a > length k). {lia. }  
+        destruct triv as [trivL | trivR].
+          - pose proof (cont := valid_message_start_le a k s H trivL). 
+            rewrite cont in Hvalid.
+            lia.
+          - exact trivR.
+      } 
+      lia.
+    - assert (Hlength : length (ha::ta) > length k). {
+        assert (triv : length (ha::ta) <= length k \/ length (ha::ta) > length k). {lia. }  
+        destruct triv as [trivL | trivR].
+          - pose proof (cont := valid_message_start_le (ha::ta) k s H trivL). 
+            rewrite cont in Hvalid.
+            lia.
+          - exact trivR.
+      }
+      rewrite valid_message_start_equation.
+      rewrite valid_message_start_equation in Hvalid.
+      pose proof (Hsw := starts_with_same (ha :: ta) b k Hlength).
+      destruct (starts_with ((ha :: ta) ++ b) k) eqn:sw.
+        + rewrite <- Hsw in Hvalid.
+          simpl.
+          destruct (skipn (length k) (ha :: ta ++ b)) as [| hs ts] eqn:Hs.
+            * rewrite app_comm_cons in Hs.
+              rewrite skipn_app in Hs.
+              apply app_eq_nil in Hs.
+              destruct Hs as [HsL HsR].
+              assert (Hlen : length (skipn (length k) (ha :: ta)) = 0). {rewrite HsL. auto. }
+              rewrite skipn_length in Hlen. 
+              lia.
+            * destruct (skipn (length k) (ha :: ta)) as [| hsn tsn] eqn:Hsn.
+                -- lia.
+                -- rewrite andb_false_iff in Hvalid.
+                   destruct Hvalid as [HvalidL | HvalidR].
+                     ++ rewrite app_comm_cons in Hs.
+                        rewrite skipn_app in Hs.
+                        rewrite Hsn in Hs.
+                        simpl in Hs.
+                        injection Hs as Heq0 Heq1.
+                        rewrite Heq0 in HvalidL.
+                        rewrite HvalidL.
+                        auto.
+                     ++ assert (Hs' : skipn (length k + 1) (ha :: ta) = tsn). {rewrite skipn_skipn. rewrite Hsn. auto. }
+                        rewrite <- Hs' in HvalidR. 
+                        pose proof (Hskip' := Hskip HvalidR).
+                        assert (Hs'' : skipn (length k + 1) (ha :: ta ++ b) = ts). {rewrite skipn_skipn. rewrite Hs. auto. }
+                        rewrite app_comm_cons in Hs''.
+                        rewrite skipn_app in Hs''.
+                        assert (triv: length k + 1 - length (ha :: ta) = 0). {lia. }
+                        rewrite triv in Hs''.
+                        simpl in Hs''.
+                        rewrite Hs'' in Hskip'.
+                        rewrite Hskip'.
+                        lia.
+        + rewrite <- Hsw in Hvalid.
+          simpl.
+          apply (Ht Hvalid).
+Qed.
 
 Lemma contains_flag_invalid_short : forall (x y f k: list bool) (s : bool) (H : length k > 0),
   (forall n, n <= length k -> valid_message_start ((firstn n k) ++ f) k s H = false) ->
@@ -730,7 +821,7 @@ Qed.
 
 
 Lemma starts_with_exists : forall (a k : list bool),
-  starts_with a k= true ->
+  starts_with a k = true ->
   exists (y : list bool), k ++ y = a.
 Proof.
   intros.
@@ -797,6 +888,16 @@ Proof.
     - auto.
 Qed.
 
+
+Lemma t : length [true; true; true; true; true] > 0.
+  simpl.
+  lia.
+Qed.
+
+Lemma test : flag_in_data (length [true; true; true; true; true]) [false; true; true; true; true; true; true; false] [true; true; true; true; true] false t = false.
+  repeat (simpl; try rewrite valid_message_start_equation).
+  auto.
+Qed.
 
 Theorem valid_communication : forall (a f k : list bool) (s : bool) (H : length k > 0), 
   a = destuff (rem_flags (add_flags (stuff a k s H) f) f) k H.
