@@ -1,6 +1,12 @@
 Require Import Bool List Arith Lia Recdef.
 Import ListNotations.
 
+Section VF.
+
+Variable f1 : list bool.
+Variable k1 : list bool.
+Variable s1 : bool.
+Variable n1 : nat.
 
 (*returns true if a starts with k, else false*)
 Fixpoint starts_with (a k : list bool) : bool :=
@@ -117,8 +123,8 @@ Proof.
   split; intros H.
   rewrite H; simpl; auto.
   destruct l. auto.
-  contradict H; simpl.
-  apply sym_not_eq; apply O_S.
+  contradict H. simpl.
+  apply sym_not_eq. apply O_S.
 Qed.
 
 Lemma nat_strong_ind: forall (P:nat -> Prop),
@@ -562,15 +568,24 @@ Proof.
           auto.
 Qed.
 
-Lemma no_flag_in_data_valid_message_start : forall (f k : list bool) (s : bool) (H : length k > 0) (n : nat),
-  n <= length k ->  
-  flag_in_data n f k s H = false ->
-  (forall x, x <= n -> valid_message_start ((firstn x k) ++ f) k s H = false).
+
+
+Hypothesis H11 : length k1 > 0.
+Hypothesis NK : n1 = length k1.
+(*Hypothesis Heq11 : n1 <= length k1.*)
+Hypothesis Hflag1 : flag_in_data n1 f1 k1 s1 H11 = false.
+
+Lemma no_flag_in_data_valid_message_start : 
+  (forall x, x <= n1 -> valid_message_start ((firstn x k1) ++ f1) k1 s1 H11 = false).
 Proof.
-  intros f k s H n.
-  induction n as [| n' IH].
-    - intros Heq Hflag x Hle. simpl. assert (triv : x = 0). {lia. } rewrite triv. simpl. simpl in Hflag. exact Hflag.
-    - intros Heq Hflag x Hle.
+  assert (Heq11 : n1 <= length k1).
+  {
+    lia.
+  }
+  clear NK.
+  induction n1 as [| n' IH].
+    - intros x Hle. simpl. assert (triv : x = 0). {lia. } rewrite triv. simpl. simpl in Hflag1. exact Hflag1.
+    - intros x Hle.
       assert (Hle' : x < S n' \/ x = S n'). {
         lia.
       }
@@ -580,15 +595,16 @@ Proof.
           assert (HL' : x <= n'). {
             lia.
           }
-          assert (Hle : n' <= length k). {lia. }
-          simpl in Hflag.
-          apply orb_false_iff in Hflag.
-          destruct Hflag as [HflagL HflagR].
-          apply (IH Hle HflagR x HL').
-        + simpl in Hflag.
+          assert (Hle : n' <= length k1). {lia. }
+          simpl in Hflag1.
+          apply orb_false_iff in Hflag1.
+          destruct Hflag1 as [HflagL HflagR].
+          (*apply (IH Hle HflagR x HL').*)
+          apply (IH HflagR Hle x HL').
+        + simpl in Hflag1.
           rewrite HR.
-          apply orb_false_iff in Hflag.
-          destruct Hflag as [HflagL HflagR].
+          apply orb_false_iff in Hflag1.
+          destruct Hflag1 as [HflagL HflagR].
           simpl.
           exact HflagL.
 Qed.
@@ -869,19 +885,39 @@ Lemma contains_exists : forall (a f : list bool),
   exact HcswL.
 Qed.
 
-
+(*
 Lemma no_flags_in_data_proof : forall (a f k : list bool) (s : bool) (H : length k > 0),
   flag_in_data (length k) f k s H = false ->
   contains (stuff a k s H) f = false.
 Proof.
   intros a f k s H Hflag.
   assert (triv : length k <= length k). {lia. }
-  pose proof (Hvalid := no_flag_in_data_valid_message_start f k s H (length k) triv Hflag).
+  pose proof (Hvalid := no_flag_in_data_valid_message_start (length k) triv Hflag).
   pose proof (Hvalid' := valid_message_start_stuff a k s H).
   destruct (contains (stuff a k s H) f) eqn:eq.
     - pose proof (Hcontains := contains_exists (stuff a k s H) f eq).
       destruct Hcontains as [x [y Heq]].
       pose proof (cont := contains_flag_invalid x y f k s H Hvalid).
+      rewrite Heq in cont.
+      rewrite cont in Hvalid'.
+      lia.
+    - auto.
+Qed.
+*)
+
+Lemma no_flags_in_data_proof : forall (a : list bool),
+  contains (stuff a k1 s1 H11) f1 = false.
+Proof.
+  intros a.
+  assert (triv : n1 <= n1). {lia. }
+  pose proof (Hvalid := no_flag_in_data_valid_message_start n1 triv).
+  pose proof (Hvalid' := valid_message_start_stuff a k1 s1 H11).
+  destruct (contains (stuff a k1 s1 H11) f1) eqn:eq.
+    - pose proof (Hcontains := contains_exists (stuff a k1 s1 H11) f1 eq).
+      destruct Hcontains as [x [y Heq]].
+      pose proof (Hcont := no_flag_in_data_valid_message_start).
+      rewrite NK in Hcont.
+      pose proof (cont := contains_flag_invalid x y f1 k1 s1 H11 Hcont).
       rewrite Heq in cont.
       rewrite cont in Hvalid'.
       lia.
@@ -902,3 +938,5 @@ Qed.
 Theorem valid_communication : forall (a f k : list bool) (s : bool) (H : length k > 0), 
   a = destuff (rem_flags (add_flags (stuff a k s H) f) f) k H.
 Admitted.
+
+End VF.
