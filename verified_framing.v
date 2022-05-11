@@ -500,6 +500,31 @@ Proof.
           lia.
 Qed.
 
+Lemma starts_with_skip2 : forall (a k : list bool) (n : nat),
+  starts_with a k = true ->
+  starts_with (skipn n a) (skipn n k) = true.
+Proof.
+  intros a.
+  induction a as [| ha ta IH].
+    - intros.
+      destruct k as [| hk tk].
+        + destruct n as [| n']; simpl; auto.
+        + simpl in H. lia.
+    - intros.
+      destruct k as [| hk tk].
+        + destruct n as [| n'].
+          * simpl. auto.
+          * simpl. destruct (skipn n' ta); simpl; auto.
+        + simpl in H.
+          destruct n as [| n'].
+            * simpl. exact H.
+            * rewrite andb_true_iff in H.
+              destruct H as [HL HR].
+              simpl.
+              apply (IH tk n' HR).
+Qed.
+
+
 Lemma contains_short : forall (a k: list bool) ,
   length a < length k ->
   contains a k = false.
@@ -518,6 +543,122 @@ Proof.
         assert (Hlen' : length ta < length (hk :: tk)). {simpl. lia. }
         rewrite (IH Hlen').
         lia.
+Qed.
+
+Lemma starts_with_append : forall (ha k : list bool) (ta : bool), starts_with ha k = true -> starts_with (ha ++ [ta]) k = true.
+  intros ha.
+  induction ha as [| hha tha IH]. 
+    - intros. destruct k. all: auto. simpl in H. lia.
+    - intros k ta H.
+      destruct k as [| hk tk].
+       + auto.
+       + simpl. simpl in H. apply andb_true_iff in H. destruct H as [HL HR]. 
+         pose (apply_IH := IH tk ta HR).
+         rewrite HL.
+         simpl. exact apply_IH. 
+Qed.
+
+Lemma skipn_lastn : forall (f : list bool) (n : nat), 
+  skipn n f = lastn (length (skipn n f)) f.
+Proof.
+  intros.
+  unfold lastn.
+  enough (rev (skipn n f) = (firstn (length (skipn n f)) (rev f))). {
+    rewrite <- H.
+    simpl.
+    rewrite rev_involutive.
+    auto.
+  }
+  rewrite skipn_length.
+  pose proof (H := firstn_skipn_rev (length f - n) (rev f)).
+  rewrite (firstn_skipn_rev (length f - n) (rev f)).
+  rewrite rev_involutive.
+  rewrite rev_length. 
+  assert (triv : length f > n \/ length f <= n). {lia. }
+  destruct triv as [trivL | trivR].
+    - replace (length f - (length f - n)) with n.
+        + auto.
+        + lia. 
+    - replace (length f - (length f - n)) with (length f).
+        + rewrite skipn_all. rewrite (skipn_all2 f trivR). auto.
+        + lia. 
+Qed.
+
+
+Lemma flags_at_overlap_presuff : forall (a f : list bool),
+  length a < length f ->
+  contains (a ++ removelast f) f = true ->
+  exists (n : nat) (b : list bool), (n > 0 /\ n <= length f-1 /\ firstn n f = lastn n f /\ a = b ++ firstn (length f - n) f).
+Proof.
+  intros.
+  induction a as [| ha ta IH].
+    - simpl in H0.
+      destruct f as [| tf hf] using rev_ind.
+        + simpl in H. lia.
+        + rewrite removelast_last in H0.
+          assert (Hlen : length hf < length (hf ++ [tf])). { rewrite app_length. simpl. lia. }
+          pose proof (Hcont := contains_short hf (hf ++ [tf]) Hlen).
+          rewrite H0 in Hcont.
+          lia.
+    - simpl in H0. 
+      destruct f as [| hf tf].
+        + simpl in H. lia.
+        + rewrite orb_true_iff in H0.
+          destruct H0 as [HL | HR].
+            * rewrite andb_true_iff in HL.
+              destruct HL as [HLL HLR].
+              assert (Hskip : starts_with (removelast (hf :: tf)) (skipn (length (ha::ta)) (hf::tf)) = true). {
+                simpl.
+                pose proof (Hswskip := starts_with_skip2 (ta ++ removelast (hf :: tf)) (tf) (length ta) HLR).
+                simpl in Hswskip.
+                rewrite skipn_app in Hswskip.
+                rewrite skipn_all in Hswskip.
+                rewrite Nat.sub_diag in Hswskip.
+                simpl in Hswskip.
+                exact Hswskip.
+              }
+              pose proof (Hsw := starts_with_append (removelast (hf :: tf)) (skipn (length (ha :: ta)) (hf :: tf)) (last (hf :: tf) false) Hskip ).
+              assert (triv : (hf :: tf) <> []). { unfold not. intros. discriminate H0. }
+              rewrite <- (app_removelast_last false triv) in Hsw.
+              pose proof (Hswfirstn := starts_with_firstn (hf::tf) (skipn (length (ha :: ta)) (hf::tf))).
+              destruct Hswfirstn as [HL HR].
+              pose proof (HL' := HL Hsw).
+              rewrite (skipn_lastn) in HL' at 2. 
+              exists (length (skipn (length (ha :: ta)) (hf::tf))).
+              exists [].
+              split; try split; try split.
+                -- rewrite skipn_length. lia.
+                -- rewrite skipn_length. simpl. lia. 
+                -- exact HL'. 
+                -- rewrite app_nil_l.
+                   rewrite skipn_length. 
+                   replace (length (hf :: tf) - (length (hf :: tf) - length (ha :: ta))) with (length (ha :: ta)).
+                    ++ simpl. 
+                       rewrite eqb_true_iff in HLL. 
+                       rewrite HLL.  
+                       apply starts_with_firstn in HLR.
+                       rewrite firstn_app in HLR.
+                       assert (triv' : length ta <= length tf). {simpl in H. lia. }
+                       rewrite (firstn_all2 ta triv') in HLR.
+                       rewrite <- HLR.
+                       rewrite firstn_app.
+                       rewrite firstn_all.
+                       rewrite Nat.sub_diag. 
+                       simpl.
+                       rewrite app_nil_r.
+                       auto.
+                    ++ lia.  
+            * assert (triv : length (ta) < length (hf :: tf)). {simpl. simpl in H. lia. }
+              pose proof (IH' := IH triv HR).
+              destruct IH' as [n [b IH']].
+              destruct IH' as [IHL [IHML [IHMR IHR]]].
+              exists n. 
+              exists (ha::b).
+              split; try split; try split.
+                -- exact IHL.
+                -- exact IHML.
+                -- exact IHMR. 
+                -- rewrite <- app_comm_cons. rewrite IHR. auto.  
 Qed.
 
 Lemma stuff_short : forall (a k: list bool) (s : bool) (H : length k > 0),
@@ -1279,8 +1420,24 @@ Proof.
       - simpl. lia.
   }
   pose proof (Hvalid := no_flag_at_overlap_valid_message_start_and_end f k s H (length f - 1) triv H1).
-  
+  assert (Hlen : length (lastn (length f - 1) (stuff a k s H)) < length f). {
+    unfold lastn.
+    rewrite rev_length.
+    rewrite firstn_length.
+    lia. 
+  }
+  destruct (contains (lastn (length f - 1) (stuff a k s H) ++ removelast f) f) eqn:eq.
+    - pose proof (Hpresuff := flags_at_overlap_presuff (lastn (length f - 1) (stuff a k s H)) f Hlen eq).
+      destruct Hpresuff as [n [b Hpresuff]].
+      destruct Hpresuff as [HL [HML [HMR HR]]].
+      pose proof (Hvalid' := Hvalid n HL HML).
+      destruct Hvalid' as [HavlidL | HvalidR].
+        + unfold not in HavlidL.
+          destruct (HavlidL HMR).
+        + admit.
+    - auto.
 Admitted.
+
 
 Lemma add_rem_flags_eq : forall (a f k : list bool) (s : bool) (H : length k > 0),
   flag_in_data (length k) f k s H = false ->
@@ -1314,7 +1471,7 @@ Proof.
   apply (no_flag_remove_end_flag (stuff a k s H) f no_flag). 
 Qed.
 
-Theorem valid_communication : forall (a f k : list bool) (s : bool) (H : length k > 0),
+Theorem valid_framing : forall (a f k : list bool) (s : bool) (H : length k > 0),
   flag_in_data (length k) f k s H = false ->
   flag_at_overlap (length f - 1) f k s H = false ->
   destuff (rem_flags (add_flags (stuff a k s H) f) f) k H = a.
