@@ -123,17 +123,17 @@ Fixpoint flag_in_data (n : nat) (f k : list bool) (s : bool) (H : length k > 0) 
     | S n' => valid_message_start ((firstn n k) ++ f) k s H || flag_in_data n' f k s H
   end.
 
-Fixpoint flag_in_data_end (n : nat) (f k : list bool) (s : bool) (H : length k > 0) : bool :=
+Fixpoint valid_message_end (n : nat) (a k : list bool) (s : bool) (H : length k > 0) : bool :=
   match n with
-    | 0 => valid_message_start_and_end f k s H
-    | S n' => valid_message_start_and_end ((firstn n k) ++ f) k s H || flag_in_data_end n' f k s H
+    | 0 => valid_message_start_and_end a k s H
+    | S n' => valid_message_start_and_end ((firstn n k) ++ a) k s H || valid_message_end n' a k s H
   end.
 
 
 Fixpoint flag_at_overlap (n : nat) (f k : list bool) (s : bool) (H : length k > 0) : bool :=
   match n with
     | 0 => false
-    | S n' => list_eq (firstn n f) (lastn n f) && flag_in_data_end (length k) (firstn (length f - n) f) k s H || flag_at_overlap n' f k s H
+    | S n' => list_eq (firstn n f) (lastn n f) && valid_message_end (length k) (firstn (length f - n) f) k s H || flag_at_overlap n' f k s H
   end.
 
 
@@ -392,6 +392,55 @@ Proof.
         + auto.
 Qed. 
 
+Lemma skipn_nil : forall (n : nat) (a : list bool),
+  skipn n a = [] ->
+  skipn (S n) a = [].
+Proof.
+  intros n.
+  induction n as [| n' IH].
+    - intros a H. destruct a as [| ha ta].
+      + simpl. auto.
+      + simpl in H. discriminate H.
+    - intros a H. destruct a as [| ha ta].
+      + simpl. auto.
+      + simpl. simpl in H.
+        pose proof (skip := IH ta H).
+        simpl in skip.
+        exact skip.
+Qed.
+
+Lemma skipn_tail : forall (n : nat) (ha hs : bool) (ta ts : list bool),
+  skipn n (ha :: ta) = hs :: ts ->
+  skipn n ta = ts.
+Proof.
+  intros n.
+  induction n as [| n' IH].
+    - intros. simpl. simpl in H. injection H as H0 H1. exact H1.
+    - intros. 
+      destruct ta as [| hta tta].
+        + simpl in H. destruct n'; discriminate H.
+        + simpl. simpl in H. apply (IH hta hs tta ts H). 
+Qed.
+
+Lemma skipn_skipn : forall (x y : nat) (a : list bool),
+  skipn (x + y) a = skipn y (skipn x a).
+Proof.
+  intros x y.
+  induction y as [| y' IH].
+    - simpl. rewrite Nat.add_0_r. auto.
+    - intros a. 
+      destruct a as [| ha ta].
+        + destruct x as [| x']; simpl; auto.
+        + destruct x as [| x'].
+          * simpl. auto.
+          * rewrite Nat.add_succ_r. 
+            pose proof (IH' := IH ta).
+            rewrite skipn_cons at 1. 
+            rewrite IH'.
+            destruct (skipn (S x') (ha :: ta)) as [| hs ts] eqn:skip.
+              -- simpl in skip. rewrite (skipn_nil x' ta skip). simpl. destruct y'; simpl; auto.
+              -- rewrite skipn_cons. rewrite <- (skipn_tail (S x') ha hs ta ts skip). auto.
+Qed.
 
 
 Lemma firstn_less : forall (a b : list bool) (n : nat), 
@@ -842,9 +891,9 @@ Proof.
           exact HflagL.
 Qed.
 
-Lemma no_flag_in_data_end_valid_message_start_and_end : forall (f k : list bool) (s : bool) (H : length k > 0) (n : nat),
+Lemma valid_message_end_false_valid_message_start_and_end : forall (f k : list bool) (s : bool) (H : length k > 0) (n : nat),
   n <= length k ->  
-  flag_in_data_end n f k s H = false ->
+  valid_message_end n f k s H = false ->
   (forall x, x <= n -> valid_message_start_and_end ((firstn x k) ++ f) k s H = false).
 Proof.
   intros f k s H n.
@@ -873,6 +922,221 @@ Proof.
           exact HflagL.
 Qed.
 
+
+Lemma valid_message_end_true_valid_message_start_and_end : forall (b k : list bool) (s : bool) (H : length k > 0) (n : nat),
+  n <= length k ->  
+  valid_message_end n b k s H = true ->
+  (exists x, valid_message_start_and_end ((firstn x k) ++ b) k s H = true).
+Proof.
+  intros.
+  induction n as [| n' IH].
+    - exists 0.
+      simpl in H1.
+      simpl.
+      auto.
+    - simpl in H1.
+      apply orb_true_iff in H1.
+      destruct H1 as [H1L | H1R].
+        + exists (S n').
+          simpl.
+          auto.
+        + assert (triv : n' <= length k). {lia. }
+          pose proof (IH' := IH triv H1R).
+          destruct IH' as [x IH'].
+          exists x.
+          auto.
+Qed.
+
+Lemma exists_valid_message_start_and_end_valid_message_end : forall (b k : list bool) (s : bool) (H : length k > 0) (n : nat),
+   n <= length k ->  
+  (exists (x : nat) (H' : x <= n), valid_message_start_and_end ((firstn x k) ++ b) k s H = true) ->
+  valid_message_end n b k s H = true. 
+Proof. 
+  intros.   
+  induction n as [| n' IH].
+    - simpl. 
+      destruct H1 as [x [H' H1]].
+      assert (triv : x = 0). {lia. }
+      rewrite triv in H1.
+      simpl in H1. 
+      auto.
+    - simpl. 
+      destruct H1 as [x [H' H1]].
+      assert (triv : x = S n' \/ x < S n'). {lia. }
+      destruct triv as [triv | triv].
+        + rewrite triv in H1. 
+          simpl in H1.
+          rewrite H1. 
+          auto.
+        + assert (Hexists : exists (x : nat) (_ : x <= n'), valid_message_start_and_end (firstn x k ++ b) k s H = true). {
+            assert (triv' : x <= n'). {lia. }
+            exists x, triv'. 
+            auto.
+          }
+          assert (triv' : n' <= length k). {lia. }
+          rewrite (IH triv' Hexists).
+          lia. 
+Qed.
+
+
+Lemma starts_with_first : forall (a f k : list bool),
+  starts_with (a ++ f) k = true ->
+  length a <= length k ->
+  a ++ f = (firstn (length a) k) ++ f.
+Proof.
+  intros a f.
+  induction a as [|ha ta IH].
+    - simpl. auto.
+    - intros k sw Hlen.
+      destruct k as [| hk tk].
+        + simpl in Hlen. lia.
+        + simpl.
+          simpl in sw.
+          apply andb_true_iff in sw.
+          destruct sw as [swL swR].
+          assert (Hlen' : length ta <= length tk). {simpl in Hlen. lia. }
+          rewrite (IH tk swR Hlen').
+          rewrite (eqb_prop ha hk swL).
+          auto.
+Qed.
+
+Lemma valid_message_start_and_end_prepend_short : forall (a b k : list bool) (s : bool) (H : length k > 0),
+  length a <= length k -> 
+  (forall n, n <= length k -> valid_message_start_and_end (firstn n k ++ b) k s H = false) ->
+  valid_message_start_and_end (a ++ b) k s H = false.
+Proof.
+  intros.
+  induction a as [| ha ta IH].
+    - assert (triv : 0 <= length k). {lia. }
+      pose proof (H1' := H1 0 triv).
+      simpl in H1'.
+      simpl.
+      auto.
+    - simpl. 
+      rewrite valid_message_start_and_end_equation.
+      destruct (starts_with (ha :: ta ++ b) k) eqn:eq.
+        + destruct (skipn (length k) (ha :: ta ++ b)) as [| hs ts] eqn:eq1.
+            * auto.
+            * pose proof (Heq := starts_with_first (ha::ta) b k eq H0).
+              pose proof (H1' := H1 (length (ha :: ta)) H0).
+              rewrite <- Heq in H1'.
+              simpl in H1'.
+              rewrite valid_message_start_and_end_equation in H1'.
+              rewrite eq in H1'. 
+              rewrite eq1 in H1'.  
+              auto.
+        + assert (triv : length ta <= length k). {simpl in H0. lia. }
+          apply (IH triv).
+Qed.
+
+
+Lemma valid_message_start_and_end_prepend : forall (a b k : list bool) (s : bool) (H : length k > 0),
+  (forall n, n <= length k -> valid_message_start_and_end (firstn n k ++ b) k s H = false) ->
+  valid_message_start_and_end (a ++ b) k s H = false.
+Proof.
+  intros.
+  assert (triv : length k + 1 > 0). {lia. }
+  induction a as [a Hlen | ha ta Ht Hskip] using (list_indk (length k + 1) triv).
+    - assert (triv' : length a <= length k). {lia. }
+      apply valid_message_start_and_end_prepend_short. all: auto.
+    - assert (triv' : length (ha :: ta) <= length k \/ length (ha :: ta) > length k). {lia. }
+      destruct triv' as [triv' | triv'].
+        + apply valid_message_start_and_end_prepend_short. all: auto.
+        + rewrite valid_message_start_and_end_equation.
+          rewrite <- app_comm_cons.
+          destruct (starts_with (ha :: ta ++ b) k).
+            * destruct (skipn (length k) (ha :: ta ++ b)) as [| hs ts] eqn:eq1; auto.
+              assert (Hs : skipn (length k + 1) (ha :: ta) ++ b = skipn (length k + 1) (ha :: ta ++ b)). {
+                rewrite app_comm_cons. 
+                rewrite skipn_app.
+                assert (length k + 1 - length (ha :: ta) = 0). {lia. }
+                rewrite H1.
+                simpl. 
+                auto.
+              }
+              rewrite Hs in Hskip.
+              rewrite skipn_skipn in Hskip.
+              rewrite eq1 in Hskip.
+              simpl in Hskip. 
+              rewrite Hskip. 
+              lia. 
+            * auto. 
+Qed.
+
+
+Lemma valid_message_end_prepend : forall (a b k : list bool) (s : bool) (H : length k > 0),
+  valid_message_end (length k) (a ++ b) k s H = true ->
+  valid_message_end (length k) b k s H = true.
+Proof.
+  intros.
+  pose proof (Hvalid := valid_message_end_true_valid_message_start_and_end (a ++ b) k s H (length k) (Nat.le_refl (length k)) H0).
+  destruct Hvalid as [x Hvalid].
+  rewrite app_assoc in Hvalid.
+  remember (firstn x k ++ a) as c. 
+  destruct (valid_message_end (length k) b k s H) eqn:eq.
+    - auto.
+    - pose proof (Hvalid' := valid_message_end_false_valid_message_start_and_end b k s H (length k) (Nat.le_refl (length k)) eq).
+      pose proof (cont := valid_message_start_and_end_prepend c b k s H Hvalid').
+      rewrite cont in Hvalid.
+      lia.
+Qed.
+
+
+
+Lemma valid_message_start_and_end_stuff : forall (a k : list bool) (s : bool) (H : length k > 0),
+  valid_message_start_and_end (stuff a k s H) k s H = true.
+Proof.
+  intros.
+
+Admitted.
+
+
+Lemma valid_message_end_stuff : forall (a k : list bool) (s : bool) (H : length k > 0),
+  valid_message_end (length k) (stuff a k s H) k s H = true.
+Proof.
+  intros.
+  pose proof (Hvalid := valid_message_start_and_end_stuff a k s H).
+  pose proof (Hvalid' := exists_valid_message_start_and_end_valid_message_end (stuff a k s H) k s H (length k) (Nat.le_refl (length k))).
+  assert (Hexists : exists (x : nat) (H' : x <= length k), valid_message_start_and_end (firstn x k ++ stuff a k s H) k s H = true). {
+    exists 0. 
+    assert (triv : 0 <= length k). {lia. }
+    exists triv.
+    simpl. auto. 
+  }
+  apply (Hvalid' Hexists).
+Qed.
+
+Lemma firstn_lastn : forall (a : list bool) (n : nat),
+  firstn n a ++ lastn (length a - n) a = a.
+Proof.
+  intros.
+  replace (lastn (length a - n) a) with (skipn n a).
+    - apply firstn_skipn. 
+    - rewrite <- skipn_length.
+      apply skipn_lastn.
+Qed.
+
+Lemma valid_message_end_stuff_lastn : forall (a k : list bool) (s : bool) (H : length k > 0) (n : nat),
+  valid_message_end (length k) (lastn n (stuff a k s H)) k s H = true.
+Proof.
+  intros.
+  pose proof (Hvalid := valid_message_end_stuff a k s H).
+  rewrite <- (firstn_lastn (stuff a k s H) (length (stuff a k s H) - n)) in Hvalid.
+  pose proof (Hvalid' := valid_message_end_prepend (firstn (length (stuff a k s H) - n) (stuff a k s H)) (lastn (length (stuff a k s H) - (length (stuff a k s H) - n)) (stuff a k s H)) k s H Hvalid).
+  assert (triv : length (stuff a k s H) <= n \/ length (stuff a k s H) > n). {lia. }
+  destruct triv as [triv | triv].
+    - replace (length (stuff a k s H) - (length (stuff a k s H) - n)) with (length (stuff a k s H)) in Hvalid'.
+        + unfold lastn.
+          assert (Hlen : length (rev (stuff a k s H)) <= n). {rewrite rev_length. lia. }
+          rewrite firstn_all2.
+          rewrite rev_involutive.
+          apply valid_message_end_stuff.
+          auto.
+        + lia.
+    - replace (length (stuff a k s H) - (length (stuff a k s H) - n)) with n in Hvalid'.
+        + auto.
+        + lia.
+Qed.
 
 
 Lemma no_flag_at_overlap_valid_message_start_and_end : forall (f k : list bool) (s : bool) (H : length k > 0) (n : nat),
@@ -904,7 +1168,7 @@ Proof.
                  assert (triv : length k <= length k). {lia. }
                  rewrite trivL.
                  simpl.
-                 apply (no_flag_in_data_end_valid_message_start_and_end (firstn (length tf - n') (hf :: tf)) k s H (length k) triv HflagL').
+                 apply (valid_message_end_false_valid_message_start_and_end (firstn (length tf - n') (hf :: tf)) k s H (length k) triv HflagL').
             * assert (triv : n' < length (hf :: tf)). {lia. }
               assert (triv' : x <= n'). {lia. }
               apply (IH triv HflagR x Hgt triv').
@@ -931,77 +1195,6 @@ Proof.
           auto.
 Qed.
 
-Lemma starts_with_first : forall (a f k : list bool),
-  starts_with (a ++ f) k = true ->
-  length a <= length k ->
-  a ++ f = (firstn (length a) k) ++ f.
-Proof.
-  intros a f.
-  induction a as [|ha ta IH].
-    - simpl. auto.
-    - intros k sw Hlen.
-      destruct k as [| hk tk].
-        + simpl in Hlen. lia.
-        + simpl.
-          simpl in sw.
-          apply andb_true_iff in sw.
-          destruct sw as [swL swR].
-          assert (Hlen' : length ta <= length tk). {simpl in Hlen. lia. }
-          rewrite (IH tk swR Hlen').
-          rewrite (eqb_prop ha hk swL).
-          auto.
-Qed.
-
-
-Lemma skipn_nil : forall (n : nat) (a : list bool),
-  skipn n a = [] ->
-  skipn (S n) a = [].
-Proof.
-  intros n.
-  induction n as [| n' IH].
-    - intros a H. destruct a as [| ha ta].
-      + simpl. auto.
-      + simpl in H. discriminate H.
-    - intros a H. destruct a as [| ha ta].
-      + simpl. auto.
-      + simpl. simpl in H.
-        pose proof (skip := IH ta H).
-        simpl in skip.
-        exact skip.
-Qed.
-
-Lemma skipn_tail : forall (n : nat) (ha hs : bool) (ta ts : list bool),
-  skipn n (ha :: ta) = hs :: ts ->
-  skipn n ta = ts.
-Proof.
-  intros n.
-  induction n as [| n' IH].
-    - intros. simpl. simpl in H. injection H as H0 H1. exact H1.
-    - intros. 
-      destruct ta as [| hta tta].
-        + simpl in H. destruct n'; discriminate H.
-        + simpl. simpl in H. apply (IH hta hs tta ts H). 
-Qed.
-
-Lemma skipn_skipn : forall (x y : nat) (a : list bool),
-  skipn (x + y) a = skipn y (skipn x a).
-Proof.
-  intros x y.
-  induction y as [| y' IH].
-    - simpl. rewrite Nat.add_0_r. auto.
-    - intros a. 
-      destruct a as [| ha ta].
-        + destruct x as [| x']; simpl; auto.
-        + destruct x as [| x'].
-          * simpl. auto.
-          * rewrite Nat.add_succ_r. 
-            pose proof (IH' := IH ta).
-            rewrite skipn_cons at 1. 
-            rewrite IH'.
-            destruct (skipn (S x') (ha :: ta)) as [| hs ts] eqn:skip.
-              -- simpl in skip. rewrite (skipn_nil x' ta skip). simpl. destruct y'; simpl; auto.
-              -- rewrite skipn_cons. rewrite <- (skipn_tail (S x') ha hs ta ts skip). auto.
-Qed.
 
 
 Lemma valid_message_start_append : forall (a b k : list bool) (s : bool) (H : length k > 0),
@@ -1408,6 +1601,7 @@ Proof.
           apply rev_involutive.
 Qed.
 
+
 Lemma no_flags_at_overlap_proof : forall (a f k : list bool) (s : bool) (H : length k > 0),
   length f > 0 ->  
   flag_at_overlap (length f - 1) f k s H = false ->
@@ -1434,9 +1628,24 @@ Proof.
       destruct Hvalid' as [HavlidL | HvalidR].
         + unfold not in HavlidL.
           destruct (HavlidL HMR).
-        + admit.
+        + pose proof (Hvalidend := valid_message_end_stuff_lastn a k s H (length f - 1)).
+          rewrite HR in Hvalidend.
+          apply valid_message_end_prepend in Hvalidend.
+          apply (valid_message_end_true_valid_message_start_and_end (firstn (length f - n) f) k s H (length k) (Nat.le_refl (length k))) in Hvalidend.
+          destruct Hvalidend as [x Hvalidend].
+          assert (triv' : x <= length k \/ x > length k). {lia. }
+          destruct triv' as [triv'L | triv'R].
+            * pose proof (cont := HvalidR x triv'L).
+              rewrite cont in Hvalidend.
+              lia.
+            * assert (triv' : length k <= x). {lia. }
+              rewrite (firstn_all2 k triv') in Hvalidend.
+              pose proof (cont := HvalidR (length k) (Nat.le_refl (length k))).
+              rewrite firstn_all in cont.
+              rewrite cont in Hvalidend.
+              lia.
     - auto.
-Admitted.
+Qed.
 
 
 Lemma add_rem_flags_eq : forall (a f k : list bool) (s : bool) (H : length k > 0),
