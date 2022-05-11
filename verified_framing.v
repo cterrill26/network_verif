@@ -1081,14 +1081,60 @@ Proof.
       lia.
 Qed.
 
+Lemma valid_message_start_and_end_short : forall (a k: list bool) (s : bool) (H : length k > 0),
+  length a < length k ->
+  valid_message_start_and_end a k s H = true.
+Proof.
+  intros a k s H Hlen.
+  pose proof (sw := starts_with_short a k Hlen).
+  induction a as [| ha ta IH]; rewrite valid_message_start_and_end_equation.
+    - reflexivity.
+    - rewrite sw.
+      assert (Hlen' : length ta < length k). {
+        simpl in Hlen. lia.
+      }
+      rewrite (IH Hlen' (starts_with_short ta k Hlen')).
+      reflexivity.
+Qed.
 
 
 Lemma valid_message_start_and_end_stuff : forall (a k : list bool) (s : bool) (H : length k > 0),
   valid_message_start_and_end (stuff a k s H) k s H = true.
 Proof.
   intros.
-
-Admitted.
+  induction a as [a Hlen | ha ta Ht Hskip] using (list_indk (length k) H).
+    - rewrite (stuff_short a k s H Hlen).
+      rewrite (valid_message_start_and_end_short a k s H Hlen). 
+      reflexivity.
+    - rewrite stuff_equation.
+      destruct (starts_with (ha :: ta) k) eqn:sw.
+        + rewrite valid_message_start_and_end_equation.
+          destruct (k ++ s :: stuff (skipn (length k) (ha :: ta)) k s H) eqn:l.
+            * assert (len : length (k ++ s :: stuff (skipn (length k) (ha :: ta)) k s H) = 0). {
+                rewrite l. simpl. auto.
+              }
+              rewrite app_length in len. lia.
+            * rewrite <- l.
+              rewrite starts_with_refl.
+              rewrite skipn_app.
+              assert (lenk : length k <= length k). {
+                lia.
+              }
+              rewrite (skipn_all2 k lenk).
+              simpl.
+              rewrite Nat.sub_diag.
+              simpl.
+              rewrite eqb_reflx.
+              rewrite Hskip.
+              auto.
+        + pose proof (swstuff := starts_with_stuff (ha :: ta) k s H sw). 
+          rewrite valid_message_start_and_end_equation.
+          rewrite stuff_equation in swstuff. 
+          rewrite sw in swstuff.
+          rewrite swstuff.
+          rewrite Ht.
+          auto.
+Qed.
 
 
 Lemma valid_message_end_stuff : forall (a k : list bool) (s : bool) (H : length k > 0),
